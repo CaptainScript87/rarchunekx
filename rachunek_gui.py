@@ -290,9 +290,17 @@ class RachunekApp:
     
     def create_lista_rachunkow_tab(self):
         """Tworzy zakładkę z listą rachunków"""
+        # Główny kontener - PanedWindow dla podziału na listę i raporty
+        main_paned = ttk.PanedWindow(self.tab_lista, orient=tk.HORIZONTAL)
+        main_paned.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Lewa strona - Lista rachunków
+        lista_frame = ttk.Frame(main_paned)
+        main_paned.add(lista_frame, weight=2)
+        
         # Frame wyszukiwania
-        search_frame = ttk.Frame(self.tab_lista)
-        search_frame.pack(fill="x", padx=10, pady=5)
+        search_frame = ttk.Frame(lista_frame)
+        search_frame.pack(fill="x", pady=(0, 10))
         
         ttk.Label(search_frame, text="Wyszukaj:").pack(side="left")
         self.search_var = tk.StringVar()
@@ -309,7 +317,7 @@ class RachunekApp:
         
         # Tabela rachunków
         columns = ("ID", "Numer", "Data", "Nabywca", "Kwota (PLN)")
-        self.tree = ttk.Treeview(self.tab_lista, columns=columns, show="headings", height=20)
+        self.tree = ttk.Treeview(lista_frame, columns=columns, show="headings", height=15)
         
         # Nagłówki kolumn
         self.tree.heading("ID", text="ID")
@@ -320,18 +328,21 @@ class RachunekApp:
         
         # Szerokość kolumn
         self.tree.column("ID", width=50, anchor="center")
-        self.tree.column("Numer", width=150, anchor="center")
-        self.tree.column("Data", width=120, anchor="center")
-        self.tree.column("Nabywca", width=200)
-        self.tree.column("Kwota (PLN)", width=100, anchor="e")
+        self.tree.column("Numer", width=120, anchor="center")
+        self.tree.column("Data", width=100, anchor="center")
+        self.tree.column("Nabywca", width=150)
+        self.tree.column("Kwota (PLN)", width=80, anchor="e")
         
         # Scrollbar dla tabeli
-        tree_scrollbar = ttk.Scrollbar(self.tab_lista, orient="vertical", command=self.tree.yview)
+        tree_scrollbar = ttk.Scrollbar(lista_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=tree_scrollbar.set)
         
         # Pakowanie tabeli
-        self.tree.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=5)
-        tree_scrollbar.pack(side="right", fill="y", padx=(0, 10), pady=5)
+        tree_container = ttk.Frame(lista_frame)
+        tree_container.pack(fill="both", expand=True)
+        
+        self.tree.pack(side="left", fill="both", expand=True)
+        tree_scrollbar.pack(side="right", fill="y")
         
         # Podwójne kliknięcie otwiera PDF
         self.tree.bind('<Double-1>', self.otworz_pdf_rachunek)
@@ -339,8 +350,139 @@ class RachunekApp:
         # Menu kontekstowe
         self.create_context_menu()
         
+        # Prawa strona - Sekcja raportów
+        raporty_frame = ttk.LabelFrame(main_paned, text="📊 Raporty i Statystyki", padding=15)
+        main_paned.add(raporty_frame, weight=1)
+        
+        # Notebook dla różnych typów raportów
+        self.raporty_notebook = ttk.Notebook(raporty_frame)
+        self.raporty_notebook.pack(fill="both", expand=True)
+        
+        # Zakładka - Podsumowanie miesięczne
+        self.miesiac_frame = ttk.Frame(self.raporty_notebook)
+        self.raporty_notebook.add(self.miesiac_frame, text="📅 Miesięczne")
+        
+        # Zakładka - Podsumowanie roczne
+        self.rok_frame = ttk.Frame(self.raporty_notebook)
+        self.raporty_notebook.add(self.rok_frame, text="📈 Roczne")
+        
+        # Zakładka - Top klienci
+        self.klienci_frame = ttk.Frame(self.raporty_notebook)
+        self.raporty_notebook.add(self.klienci_frame, text="👥 Klienci")
+        
+        # Utwórz zawartość zakładek raportów
+        self.create_miesiac_raport()
+        self.create_rok_raport()
+        self.create_klienci_raport()
+        
         # Załaduj dane
         self.load_rachunki_data()
+    
+    def create_miesiac_raport(self):
+        """Tworzy zawartość raportu miesięcznego"""
+        # Wybór roku i miesiąca
+        wybor_frame = ttk.Frame(self.miesiac_frame)
+        wybor_frame.pack(fill="x", pady=(0, 10))
+        
+        ttk.Label(wybor_frame, text="Rok:").pack(side="left")
+        self.miesiac_rok_var = tk.StringVar(value=str(datetime.now().year))
+        rok_combo = ttk.Combobox(wybor_frame, textvariable=self.miesiac_rok_var, 
+                                width=8, state="readonly")
+        rok_combo['values'] = [str(y) for y in range(2020, datetime.now().year + 2)]
+        rok_combo.pack(side="left", padx=(5, 15))
+        
+        ttk.Button(wybor_frame, text="📊 Generuj", 
+                  command=self.generuj_raport_miesięczny).pack(side="left")
+        ttk.Button(wybor_frame, text="🔄 Odśwież", 
+                  command=self.odswież_raport_miesięczny).pack(side="left", padx=(5, 0))
+        
+        # Wyniki raportu
+        self.miesiac_text = tk.Text(self.miesiac_frame, height=15, wrap=tk.WORD, 
+                                   state="disabled", font=('Segoe UI', 9))
+        
+        # Scrollbar dla tekstu
+        miesiac_scroll = ttk.Scrollbar(self.miesiac_frame, orient="vertical", 
+                                      command=self.miesiac_text.yview)
+        self.miesiac_text.configure(yscrollcommand=miesiac_scroll.set)
+        
+        # Pakowanie
+        text_frame = ttk.Frame(self.miesiac_frame)
+        text_frame.pack(fill="both", expand=True)
+        
+        self.miesiac_text.pack(side="left", fill="both", expand=True)
+        miesiac_scroll.pack(side="right", fill="y")
+        
+        # Wczytaj domyślny raport
+        self.generuj_raport_miesięczny()
+    
+    def create_rok_raport(self):
+        """Tworzy zawartość raportu rocznego"""
+        # Przycisk generowania
+        button_frame = ttk.Frame(self.rok_frame)
+        button_frame.pack(fill="x", pady=(0, 10))
+        
+        ttk.Button(button_frame, text="📈 Generuj Raport Roczny", 
+                  command=self.generuj_raport_roczny).pack(side="left")
+        ttk.Button(button_frame, text="🔄 Odśwież", 
+                  command=self.odswież_raport_roczny).pack(side="left", padx=(10, 0))
+        
+        # Wyniki raportu
+        self.rok_text = tk.Text(self.rok_frame, height=15, wrap=tk.WORD,
+                               state="disabled", font=('Segoe UI', 9))
+        
+        # Scrollbar dla tekstu
+        rok_scroll = ttk.Scrollbar(self.rok_frame, orient="vertical",
+                                  command=self.rok_text.yview)
+        self.rok_text.configure(yscrollcommand=rok_scroll.set)
+        
+        # Pakowanie
+        text_frame = ttk.Frame(self.rok_frame)
+        text_frame.pack(fill="both", expand=True)
+        
+        self.rok_text.pack(side="left", fill="both", expand=True)
+        rok_scroll.pack(side="right", fill="y")
+        
+        # Wczytaj domyślny raport
+        self.generuj_raport_roczny()
+    
+    def create_klienci_raport(self):
+        """Tworzy zawartość raportu klientów"""
+        # Wybór liczby klientów
+        wybor_frame = ttk.Frame(self.klienci_frame)
+        wybor_frame.pack(fill="x", pady=(0, 10))
+        
+        ttk.Label(wybor_frame, text="Top:").pack(side="left")
+        self.top_limit_var = tk.StringVar(value="10")
+        limit_combo = ttk.Combobox(wybor_frame, textvariable=self.top_limit_var,
+                                  width=5, state="readonly")
+        limit_combo['values'] = ['5', '10', '15', '20', '25']
+        limit_combo.pack(side="left", padx=(5, 10))
+        
+        ttk.Label(wybor_frame, text="klientów").pack(side="left")
+        
+        ttk.Button(wybor_frame, text="👥 Generuj", 
+                  command=self.generuj_raport_klientów).pack(side="left", padx=(15, 0))
+        ttk.Button(wybor_frame, text="🔄 Odśwież", 
+                  command=self.odswież_raport_klientów).pack(side="left", padx=(5, 0))
+        
+        # Wyniki raportu
+        self.klienci_text = tk.Text(self.klienci_frame, height=15, wrap=tk.WORD,
+                                   state="disabled", font=('Segoe UI', 9))
+        
+        # Scrollbar dla tekstu
+        klienci_scroll = ttk.Scrollbar(self.klienci_frame, orient="vertical",
+                                      command=self.klienci_text.yview)
+        self.klienci_text.configure(yscrollcommand=klienci_scroll.set)
+        
+        # Pakowanie
+        text_frame = ttk.Frame(self.klienci_frame)
+        text_frame.pack(fill="both", expand=True)
+        
+        self.klienci_text.pack(side="left", fill="both", expand=True)
+        klienci_scroll.pack(side="right", fill="y")
+        
+        # Wczytaj domyślny raport
+        self.generuj_raport_klientów()
     
     def create_context_menu(self):
         """Tworzy menu kontekstowe dla tabeli rachunków"""
@@ -707,6 +849,144 @@ Plik PDF: {szczegoly.get('plik_pdf', 'Brak')}"""
                 messagebox.showinfo("Sukces", f"Rachunki zostały wyeksportowane do: {sciezka}")
             else:
                 messagebox.showerror("Błąd", wynik['error'])
+    
+    def generuj_raport_miesięczny(self):
+        """Generuje raport miesięczny"""
+        try:
+            rok = int(self.miesiac_rok_var.get())
+            raport = self.manager.pobierz_raport_miesięczny(rok)
+            
+            # Formatuj raport
+            tekst = f"🗓️ RAPORT MIESIĘCZNY - {rok}\n"
+            tekst += "=" * 50 + "\n\n"
+            
+            if not raport['miesiace']:
+                tekst += "❌ Brak danych dla tego roku.\n"
+            else:
+                for miesiac in raport['miesiace']:
+                    status_emoji = {
+                        'PRZEKROCZONY': '🔴',
+                        'OSTRZEŻENIE': '🟠', 
+                        'NORMALNY': '🟡',
+                        'BEZPIECZNY': '🟢'
+                    }.get(miesiac['status'], '⚪')
+                    
+                    tekst += f"{status_emoji} {miesiac['miesiac_nazwa']} {rok}\n"
+                    tekst += f"   💰 Przychody: {miesiac['suma_kwot']:.2f} PLN\n"
+                    tekst += f"   📊 Rachunków: {miesiac['liczba_rachunkow']}\n"
+                    tekst += f"   📈 Średnia: {miesiac['srednia_kwota']:.2f} PLN\n"
+                    tekst += f"   🎯 Limit: {miesiac['limit_miesięczny']:.2f} PLN\n"
+                    tekst += f"   ⚡ Pozostało: {miesiac['pozostaly_limit']:.2f} PLN\n"
+                    tekst += f"   📍 Status: {miesiac['status']} ({miesiac['procent_wykorzystania']:.1f}%)\n\n"
+                
+                # Podsumowanie roczne
+                podsumowanie = raport['podsumowanie_roczne']
+                tekst += "📈 PODSUMOWANIE ROCZNE\n"
+                tekst += "-" * 30 + "\n"
+                tekst += f"📊 Łączna liczba rachunków: {podsumowanie['total_rachunki']}\n"
+                tekst += f"💰 Łączne przychody: {podsumowanie['total_kwoty']:.2f} PLN\n"
+                tekst += f"📅 Aktywnych miesięcy: {podsumowanie['miesiace_aktywne']}/12\n"
+                tekst += f"🔴 Miesięcy z przekroczonym limitem: {podsumowanie['miesiace_przekroczone']}\n"
+                tekst += f"📊 Średnia miesięczna: {podsumowanie['srednia_miesieczna']:.2f} PLN\n"
+                
+                if podsumowanie['max_miesiac']:
+                    tekst += f"🏆 Najlepszy miesiąc: {podsumowanie['max_miesiac']['miesiac_nazwa']} ({podsumowanie['max_miesiac']['suma_kwot']:.2f} PLN)\n"
+                if podsumowanie['min_miesiac']:
+                    tekst += f"📉 Najsłabszy miesiąc: {podsumowanie['min_miesiac']['miesiac_nazwa']} ({podsumowanie['min_miesiac']['suma_kwot']:.2f} PLN)\n"
+            
+            # Wyświetl w widget tekstowym
+            self.miesiac_text.config(state="normal")
+            self.miesiac_text.delete("1.0", tk.END)
+            self.miesiac_text.insert("1.0", tekst)
+            self.miesiac_text.config(state="disabled")
+            
+        except Exception as e:
+            messagebox.showerror("Błąd", f"Błąd podczas generowania raportu: {str(e)}")
+    
+    def generuj_raport_roczny(self):
+        """Generuje raport roczny"""
+        try:
+            raport = self.manager.pobierz_raport_roczny()
+            
+            # Formatuj raport
+            tekst = "📅 RAPORT ROCZNY - WSZYSTKIE LATA\n"
+            tekst += "=" * 50 + "\n\n"
+            
+            if not raport['lata']:
+                tekst += "❌ Brak danych w bazie.\n"
+            else:
+                tekst += "📊 PRZYCHODY WG LAT\n"
+                tekst += "-" * 25 + "\n"
+                for rok in raport['lata']:
+                    tekst += f"📅 Rok {rok['rok']}\n"
+                    tekst += f"   💰 Przychody: {rok['suma_kwot']:.2f} PLN\n"
+                    tekst += f"   📊 Rachunków: {rok['liczba_rachunkow']}\n"
+                    tekst += f"   📈 Średnia: {rok['srednia_kwota']:.2f} PLN\n"
+                    tekst += f"   📉 Min: {rok['min_kwota']:.2f} PLN | 📈 Max: {rok['max_kwota']:.2f} PLN\n\n"
+                
+                # Statystyki ogólne
+                stats = raport['statystyki_ogolne']
+                tekst += "📈 STATYSTYKI OGÓLNE\n"
+                tekst += "-" * 20 + "\n"
+                tekst += f"📊 Łączna liczba rachunków: {stats['total_rachunki']}\n"
+                tekst += f"💰 Łączne przychody: {stats['total_kwota']:.2f} PLN\n"
+                tekst += f"📊 Średnia wartość rachunku: {stats['srednia_kwota']:.2f} PLN\n"
+                tekst += f"👥 Unikalnych klientów: {stats['unikalni_klienci']}\n"
+                if stats['pierwszy_rachunek']:
+                    tekst += f"📅 Pierwszy rachunek: {stats['pierwszy_rachunek']}\n"
+                if stats['ostatni_rachunek']:
+                    tekst += f"📅 Ostatni rachunek: {stats['ostatni_rachunek']}\n"
+            
+            # Wyświetl w widget tekstowym
+            self.rok_text.config(state="normal")
+            self.rok_text.delete("1.0", tk.END)
+            self.rok_text.insert("1.0", tekst)
+            self.rok_text.config(state="disabled")
+            
+        except Exception as e:
+            messagebox.showerror("Błąd", f"Błąd podczas generowania raportu: {str(e)}")
+    
+    def generuj_raport_klientów(self):
+        """Generuje raport top klientów"""
+        try:
+            limit = int(self.top_limit_var.get())
+            klienci = self.manager.pobierz_raport_top_klientow(limit)
+            
+            # Formatuj raport
+            tekst = f"👥 TOP {limit} KLIENTÓW\n"
+            tekst += "=" * 40 + "\n\n"
+            
+            if not klienci:
+                tekst += "❌ Brak danych o klientach.\n"
+            else:
+                for i, klient in enumerate(klienci, 1):
+                    medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i:2d}."
+                    tekst += f"{medal} {klient['klient']}\n"
+                    tekst += f"    💰 Łączne kwoty: {klient['suma_kwot']:.2f} PLN\n"
+                    tekst += f"    📊 Rachunków: {klient['liczba_rachunkow']}\n"
+                    tekst += f"    📈 Średnia: {klient['srednia_kwota']:.2f} PLN\n"
+                    tekst += f"    📅 Ostatni rachunek: {klient['ostatni_rachunek']}\n\n"
+            
+            # Wyświetl w widget tekstowym
+            self.klienci_text.config(state="normal")
+            self.klienci_text.delete("1.0", tk.END)
+            self.klienci_text.insert("1.0", tekst)
+            self.klienci_text.config(state="disabled")
+            
+        except Exception as e:
+            messagebox.showerror("Błąd", f"Błąd podczas generowania raportu: {str(e)}")
+    
+    def odswież_raport_miesięczny(self):
+        """Odświeża raport miesięczny"""
+        self.generuj_raport_miesięczny()
+    
+    def odswież_raport_roczny(self):
+        """Odświeża raport roczny"""
+        self.generuj_raport_roczny()
+    
+    def odswież_raport_klientów(self):
+        """Odświeża raport klientów"""
+        self.generuj_raport_klientów()
     
     def create_monthly_summary_frame(self, parent):
         """Tworzy ramkę z podsumowaniem miesięcznym"""

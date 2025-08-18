@@ -412,3 +412,116 @@ class RachunekManager:
             'status': status,
             'status_kolor': status_kolor
         }
+    
+    def pobierz_raport_miesięczny(self, rok: int = None) -> Dict:
+        """
+        Pobiera raport miesięczny z dodatkowymi informacjami o limitach
+        
+        Args:
+            rok: Rok do analizy (domyślnie bieżący)
+            
+        Returns:
+            Słownik z raportem miesięcznym
+        """
+        if rok is None:
+            rok = datetime.now().year
+            
+        miesiace = self.db.pobierz_raport_miesięczny(rok)
+        
+        # Dodaj informacje o limitach dla każdego miesiąca
+        import config
+        limit_miesięczny = config.MONTHLY_REVENUE_LIMIT_2025 if rok == 2025 else 3499.50
+        
+        for miesiac in miesiace:
+            suma_kwot = miesiac['suma_kwot']
+            miesiac['limit_miesięczny'] = limit_miesięczny
+            miesiac['pozostaly_limit'] = max(0, limit_miesięczny - suma_kwot)
+            miesiac['procent_wykorzystania'] = round((suma_kwot / limit_miesięczny) * 100, 1)
+            
+            # Status kolory
+            if suma_kwot > limit_miesięczny:
+                miesiac['status'] = "PRZEKROCZONY"
+                miesiac['status_kolor'] = "red"
+            elif suma_kwot > limit_miesięczny * 0.8:
+                miesiac['status'] = "OSTRZEŻENIE" 
+                miesiac['status_kolor'] = "orange"
+            elif suma_kwot > limit_miesięczny * 0.5:
+                miesiac['status'] = "NORMALNY"
+                miesiac['status_kolor'] = "yellow"
+            else:
+                miesiac['status'] = "BEZPIECZNY"
+                miesiac['status_kolor'] = "green"
+        
+        return {
+            'rok': rok,
+            'miesiace': miesiace,
+            'podsumowanie_roczne': self._oblicz_podsumowanie_roczne(miesiace, limit_miesięczny)
+        }
+    
+    def pobierz_raport_roczny(self) -> Dict:
+        """
+        Pobiera raport roczny z dodatkowymi analizami
+        
+        Returns:
+            Słownik z raportem rocznym
+        """
+        lata = self.db.pobierz_raport_roczny()
+        
+        return {
+            'lata': lata,
+            'statystyki_ogolne': self.db.pobierz_statystyki_ogolne()
+        }
+    
+    def pobierz_raport_top_klientow(self, limit: int = 10) -> List[Dict]:
+        """
+        Pobiera raport top klientów
+        
+        Args:
+            limit: Maksymalna liczba klientów
+            
+        Returns:
+            Lista top klientów z dodatkowymi informacjami
+        """
+        return self.db.pobierz_top_klientow(limit)
+    
+    def _oblicz_podsumowanie_roczne(self, miesiace: List[Dict], limit_miesięczny: float) -> Dict:
+        """
+        Oblicza podsumowanie roczne na podstawie danych miesięcznych
+        
+        Args:
+            miesiace: Lista danych miesięcznych
+            limit_miesięczny: Limit miesięczny
+            
+        Returns:
+            Podsumowanie roczne
+        """
+        if not miesiace:
+            return {
+                'total_rachunki': 0,
+                'total_kwoty': 0.0,
+                'miesiace_aktywne': 0,
+                'miesiace_przekroczone': 0,
+                'srednia_miesieczna': 0.0,
+                'max_miesiac': None,
+                'min_miesiac': None
+            }
+        
+        total_rachunki = sum(m['liczba_rachunkow'] for m in miesiace)
+        total_kwoty = sum(m['suma_kwot'] for m in miesiace)
+        miesiace_aktywne = len([m for m in miesiace if m['liczba_rachunkow'] > 0])
+        miesiace_przekroczone = len([m for m in miesiace if m['suma_kwot'] > limit_miesięczny])
+        
+        # Znajdź najlepszy i najgorszy miesiąc
+        max_miesiac = max(miesiace, key=lambda m: m['suma_kwot']) if miesiace else None
+        min_miesiac = min([m for m in miesiace if m['liczba_rachunkow'] > 0], 
+                         key=lambda m: m['suma_kwot']) if miesiace else None
+        
+        return {
+            'total_rachunki': total_rachunki,
+            'total_kwoty': round(total_kwoty, 2),
+            'miesiace_aktywne': miesiace_aktywne,
+            'miesiace_przekroczone': miesiace_przekroczone,
+            'srednia_miesieczna': round(total_kwoty / max(miesiace_aktywne, 1), 2),
+            'max_miesiac': max_miesiac,
+            'min_miesiac': min_miesiac
+        }

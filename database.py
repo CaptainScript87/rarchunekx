@@ -374,3 +374,165 @@ class DatabaseManager:
                 })
             
             return rachunki
+    
+    def pobierz_raport_miesięczny(self, rok: int = None) -> List[Dict]:
+        """
+        Pobiera raport miesięczny dla danego roku
+        
+        Args:
+            rok: Rok do analizy (domyślnie bieżący)
+            
+        Returns:
+            Lista z podsumowaniem dla każdego miesiąca
+        """
+        if rok is None:
+            rok = datetime.now().year
+            
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT 
+                    strftime('%m', data_wystawienia) as miesiac,
+                    COUNT(*) as liczba_rachunkow,
+                    SUM(kwota_do_zaplaty) as suma_kwot,
+                    AVG(kwota_do_zaplaty) as srednia_kwota,
+                    MIN(kwota_do_zaplaty) as min_kwota,
+                    MAX(kwota_do_zaplaty) as max_kwota
+                FROM rachunki 
+                WHERE strftime('%Y', data_wystawienia) = ?
+                GROUP BY strftime('%m', data_wystawienia)
+                ORDER BY miesiac
+            ''', (str(rok),))
+            
+            miesiace = []
+            nazwa_miesiecy = [
+                "Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec",
+                "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień"
+            ]
+            
+            for row in cursor.fetchall():
+                miesiac_nr = int(row[0])
+                miesiace.append({
+                    'miesiac_nr': miesiac_nr,
+                    'miesiac_nazwa': nazwa_miesiecy[miesiac_nr - 1],
+                    'rok': rok,
+                    'liczba_rachunkow': row[1],
+                    'suma_kwot': round(row[2], 2),
+                    'srednia_kwota': round(row[3], 2),
+                    'min_kwota': round(row[4], 2),
+                    'max_kwota': round(row[5], 2)
+                })
+            
+            return miesiace
+    
+    def pobierz_raport_roczny(self) -> List[Dict]:
+        """
+        Pobiera raport roczny dla wszystkich lat
+        
+        Returns:
+            Lista z podsumowaniem dla każdego roku
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT 
+                    strftime('%Y', data_wystawienia) as rok,
+                    COUNT(*) as liczba_rachunkow,
+                    SUM(kwota_do_zaplaty) as suma_kwot,
+                    AVG(kwota_do_zaplaty) as srednia_kwota,
+                    MIN(kwota_do_zaplaty) as min_kwota,
+                    MAX(kwota_do_zaplaty) as max_kwota
+                FROM rachunki 
+                GROUP BY strftime('%Y', data_wystawienia)
+                ORDER BY rok DESC
+            ''')
+            
+            lata = []
+            for row in cursor.fetchall():
+                lata.append({
+                    'rok': int(row[0]),
+                    'liczba_rachunkow': row[1],
+                    'suma_kwot': round(row[2], 2),
+                    'srednia_kwota': round(row[3], 2),
+                    'min_kwota': round(row[4], 2),
+                    'max_kwota': round(row[5], 2)
+                })
+            
+            return lata
+    
+    def pobierz_top_klientow(self, limit: int = 10) -> List[Dict]:
+        """
+        Pobiera top klientów według liczby rachunków i kwot
+        
+        Args:
+            limit: Maksymalna liczba klientów do zwrócenia
+            
+        Returns:
+            Lista z top klientami
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT 
+                    nabywca_imie || ' ' || nabywca_nazwisko as klient,
+                    COUNT(*) as liczba_rachunkow,
+                    SUM(kwota_do_zaplaty) as suma_kwot,
+                    AVG(kwota_do_zaplaty) as srednia_kwota,
+                    MAX(data_wystawienia) as ostatni_rachunek
+                FROM rachunki 
+                GROUP BY nabywca_imie, nabywca_nazwisko
+                ORDER BY suma_kwot DESC
+                LIMIT ?
+            ''', (limit,))
+            
+            klienci = []
+            for row in cursor.fetchall():
+                klienci.append({
+                    'klient': row[0],
+                    'liczba_rachunkow': row[1],
+                    'suma_kwot': round(row[2], 2),
+                    'srednia_kwota': round(row[3], 2),
+                    'ostatni_rachunek': row[4]
+                })
+            
+            return klienci
+    
+    def pobierz_statystyki_ogolne(self) -> Dict:
+        """
+        Pobiera ogólne statystyki aplikacji
+        
+        Returns:
+            Słownik z ogólnymi statystykami
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Podstawowe statystyki
+            cursor.execute('SELECT COUNT(*) FROM rachunki')
+            total_rachunki = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT SUM(kwota_do_zaplaty) FROM rachunki')
+            total_kwota = cursor.fetchone()[0] or 0
+            
+            cursor.execute('SELECT AVG(kwota_do_zaplaty) FROM rachunki')
+            avg_kwota = cursor.fetchone()[0] or 0
+            
+            # Pierwszy i ostatni rachunek
+            cursor.execute('SELECT MIN(data_wystawienia) FROM rachunki')
+            pierwszy_rachunek = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT MAX(data_wystawienia) FROM rachunki')
+            ostatni_rachunek = cursor.fetchone()[0]
+            
+            # Liczba unikalnych klientów
+            cursor.execute('SELECT COUNT(DISTINCT nabywca_imie || nabywca_nazwisko) FROM rachunki')
+            unikalni_klienci = cursor.fetchone()[0]
+            
+            return {
+                'total_rachunki': total_rachunki,
+                'total_kwota': round(total_kwota, 2),
+                'srednia_kwota': round(avg_kwota, 2),
+                'pierwszy_rachunek': pierwszy_rachunek,
+                'ostatni_rachunek': ostatni_rachunek,
+                'unikalni_klienci': unikalni_klienci
+            }
