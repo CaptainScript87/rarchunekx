@@ -209,8 +209,10 @@ class RachunekApp:
                  foreground="orange").pack()
         
         # Wybór rachunku
-        ttk.Label(main_frame, text="Wybierz rachunek do usunięcia:", 
-                 font=('Segoe UI', 10, 'bold')).pack(anchor="w", pady=(0, 5))
+        ttk.Label(main_frame, text="Wybierz rachunki do usunięcia:", 
+                 font=('Segoe UI', 10, 'bold')).pack(anchor="w", pady=(0, 2))
+        ttk.Label(main_frame, text="💡 Ctrl+klik = wielokrotny wybór, Shift+klik = zakres", 
+                 font=('Segoe UI', 8), foreground="gray").pack(anchor="w", pady=(0, 5))
         
         # Ramka dla tabeli
         tree_frame = ttk.Frame(main_frame)
@@ -218,7 +220,7 @@ class RachunekApp:
         
         # Lista rachunków
         columns = ("ID", "Numer", "Data", "Nabywca", "Kwota")
-        tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=8)
+        tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=8, selectmode="extended")
         
         for col in columns:
             tree.heading(col, text=col)
@@ -245,6 +247,21 @@ class RachunekApp:
             ))
         print("DEBUG: Rachunki załadowane do tabeli")  # Debug
         
+        # Przyciski wyboru
+        select_frame = ttk.Frame(main_frame)
+        select_frame.pack(fill="x", pady=(5, 10))
+        
+        def zaznacz_wszystkie():
+            tree.selection_set(tree.get_children())
+        
+        def odznacz_wszystkie():
+            tree.selection_remove(tree.selection())
+        
+        ttk.Button(select_frame, text="✅ Zaznacz wszystkie", 
+                  command=zaznacz_wszystkie).pack(side="left", padx=(0, 10))
+        ttk.Button(select_frame, text="❌ Odznacz wszystkie", 
+                  command=odznacz_wszystkie).pack(side="left")
+        
         # Powód usunięcia
         ttk.Label(main_frame, text="Powód usunięcia (opcjonalnie):").pack(anchor="w", pady=(5, 0))
         powod_var = tk.StringVar()
@@ -254,33 +271,64 @@ class RachunekApp:
         def usun_wybrany():
             selection = tree.selection()
             if not selection:
-                messagebox.showwarning("Uwaga", "Wybierz rachunek do usunięcia.", parent=usun_window)
+                messagebox.showwarning("Uwaga", "Wybierz przynajmniej jeden rachunek do usunięcia.", parent=usun_window)
                 return
             
-            item = tree.item(selection[0])
-            rachunek_id = item['values'][0]
-            numer = item['values'][1]
+            # Zbierz informacje o wybranych rachunkach
+            wybrane_rachunki = []
+            for item_id in selection:
+                item = tree.item(item_id)
+                wybrane_rachunki.append({
+                    'id': item['values'][0],
+                    'numer': item['values'][1]
+                })
             
-            if messagebox.askyesno("Potwierdzenie", 
-                                 f"Czy na pewno usunąć rachunek {numer}?", 
-                                 parent=usun_window):
-                wynik = self.manager.usun_rachunek_z_potwierdzeniem(rachunek_id, powod_var.get())
-                
+            # Potwierdzenie usunięcia
+            if len(wybrane_rachunki) == 1:
+                tekst_potwierdzenia = f"Czy na pewno usunąć rachunek {wybrane_rachunki[0]['numer']}?"
+            else:
+                numery = ", ".join([r['numer'] for r in wybrane_rachunki[:3]])
+                if len(wybrane_rachunki) > 3:
+                    numery += f" i {len(wybrane_rachunki) - 3} innych"
+                tekst_potwierdzenia = f"Czy na pewno usunąć {len(wybrane_rachunki)} rachunków?\n({numery})"
+            
+            if not messagebox.askyesno("Potwierdzenie", tekst_potwierdzenia, parent=usun_window):
+                return
+            
+            # Usuń wszystkie wybrane rachunki
+            powod = powod_var.get()
+            usuniete_pomyslnie = []
+            bledy = []
+            
+            for rachunek in wybrane_rachunki:
+                wynik = self.manager.usun_rachunek_z_potwierdzeniem(rachunek['id'], powod)
                 if wynik['success']:
-                    messagebox.showinfo("Sukces", 
-                                      f"Rachunek {wynik['numer_rachunku']} został usunięty.", 
-                                      parent=usun_window)
-                    usun_window.destroy()
-                    # Odśwież listę rachunków w głównym oknie
-                    self.load_rachunki_data()
+                    usuniete_pomyslnie.append(wynik['numer_rachunku'])
                 else:
-                    messagebox.showerror("Błąd", wynik['error'], parent=usun_window)
+                    bledy.append(f"{rachunek['numer']}: {wynik['error']}")
+            
+            # Pokaż wyniki
+            if usuniete_pomyslnie and not bledy:
+                if len(usuniete_pomyslnie) == 1:
+                    messagebox.showinfo("Sukces", f"Rachunek {usuniete_pomyslnie[0]} został usunięty.", parent=usun_window)
+                else:
+                    messagebox.showinfo("Sukces", f"Pomyślnie usunięto {len(usuniete_pomyslnie)} rachunków.", parent=usun_window)
+                usun_window.destroy()
+                self.load_rachunki_data()
+            elif usuniete_pomyslnie and bledy:
+                messagebox.showwarning("Częściowy sukces", 
+                    f"Usunięto {len(usuniete_pomyslnie)} rachunków.\n\nBłędy:\n" + "\n".join(bledy), 
+                    parent=usun_window)
+                usun_window.destroy()
+                self.load_rachunki_data()
+            else:
+                messagebox.showerror("Błąd", "Nie udało się usunąć żadnego rachunku:\n" + "\n".join(bledy), parent=usun_window)
         
         buttons_frame = ttk.Frame(main_frame)
         buttons_frame.pack(fill="x", pady=(10, 0))
         
         print("DEBUG: Tworzę przyciski w oknie usuwania")  # Debug
-        ttk.Button(buttons_frame, text="❌ Usuń wybrany", command=usun_wybrany,
+        ttk.Button(buttons_frame, text="❌ Usuń wybrane", command=usun_wybrany,
                   style="Warning.TButton").pack(side="left", padx=(0, 10))
         ttk.Button(buttons_frame, text="🚫 Anuluj", 
                   command=usun_window.destroy).pack(side="left")
