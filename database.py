@@ -84,6 +84,51 @@ class DatabaseManager:
                 )
             ''')
             
+            # Tabela z usuniętymi rachunkami (soft delete)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS usunięte_rachunki (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    original_id INTEGER NOT NULL,
+                    numer_rachunku TEXT NOT NULL,
+                    data_wystawienia DATE NOT NULL,
+                    data_wykonania_uslugi DATE NOT NULL,
+                    
+                    sprzedawca_imie TEXT NOT NULL,
+                    sprzedawca_nazwisko TEXT NOT NULL,
+                    sprzedawca_ulica TEXT NOT NULL,
+                    sprzedawca_nr_domu TEXT NOT NULL,
+                    sprzedawca_kod_pocztowy TEXT NOT NULL,
+                    sprzedawca_miasto TEXT NOT NULL,
+                    
+                    nabywca_imie TEXT NOT NULL,
+                    nabywca_nazwisko TEXT NOT NULL,
+                    nabywca_ulica TEXT NOT NULL,
+                    nabywca_nr_domu TEXT NOT NULL,
+                    nabywca_kod_pocztowy TEXT NOT NULL,
+                    nabywca_miasto TEXT NOT NULL,
+                    
+                    nazwa_uslugi TEXT NOT NULL,
+                    cena_jednostkowa REAL NOT NULL,
+                    kwota_do_zaplaty REAL NOT NULL,
+                    kwota_slownie TEXT NOT NULL,
+                    
+                    plik_pdf TEXT,
+                    data_utworzenia TIMESTAMP,
+                    data_usuniecia TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    powod_usuniecia TEXT
+                )
+            ''')
+            
+            # Tabela z ustawieniami aplikacji
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS ustawienia (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    klucz TEXT UNIQUE NOT NULL,
+                    wartosc TEXT NOT NULL,
+                    data_zmiany TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
             conn.commit()
     
     def get_domyslny_sprzedawca(self) -> Optional[Dict]:
@@ -536,3 +581,179 @@ class DatabaseManager:
                 'ostatni_rachunek': ostatni_rachunek,
                 'unikalni_klienci': unikalni_klienci
             }
+    
+    def usun_rachunek(self, rachunek_id: int, powod: str = "") -> bool:
+        """
+        Usuwa rachunek (soft delete - przenosi do tabeli usuniętych)
+        
+        Args:
+            rachunek_id: ID rachunku do usunięcia
+            powod: Powód usunięcia
+            
+        Returns:
+            True jeśli usunięto, False w przeciwnym razie
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Pobierz dane rachunku
+            cursor.execute('SELECT * FROM rachunki WHERE id = ?', (rachunek_id,))
+            rachunek = cursor.fetchone()
+            
+            if not rachunek:
+                return False
+            
+            # Przenieś do tabeli usuniętych
+            cursor.execute('''
+                INSERT INTO usunięte_rachunki (
+                    original_id, numer_rachunku, data_wystawienia, data_wykonania_uslugi,
+                    sprzedawca_imie, sprzedawca_nazwisko, sprzedawca_ulica, 
+                    sprzedawca_nr_domu, sprzedawca_kod_pocztowy, sprzedawca_miasto,
+                    nabywca_imie, nabywca_nazwisko, nabywca_ulica, 
+                    nabywca_nr_domu, nabywca_kod_pocztowy, nabywca_miasto,
+                    nazwa_uslugi, cena_jednostkowa, kwota_do_zaplaty, kwota_slownie, 
+                    plik_pdf, data_utworzenia, powod_usuniecia
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                rachunek[0], rachunek[1], rachunek[2], rachunek[3],
+                rachunek[4], rachunek[5], rachunek[6], rachunek[7], rachunek[8], rachunek[9],
+                rachunek[10], rachunek[11], rachunek[12], rachunek[13], rachunek[14], rachunek[15],
+                rachunek[16], rachunek[17], rachunek[18], rachunek[19], 
+                rachunek[20], rachunek[21], powod
+            ))
+            
+            # Usuń z głównej tabeli
+            cursor.execute('DELETE FROM rachunki WHERE id = ?', (rachunek_id,))
+            
+            conn.commit()
+            return True
+    
+    def pobierz_usunięte_rachunki(self) -> List[Dict]:
+        """
+        Pobiera listę usuniętych rachunków
+        
+        Returns:
+            Lista usuniętych rachunków
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, original_id, numer_rachunku, data_wystawienia,
+                       nabywca_imie, nabywca_nazwisko, kwota_do_zaplaty,
+                       data_usuniecia, powod_usuniecia
+                FROM usunięte_rachunki 
+                ORDER BY data_usuniecia DESC
+            ''')
+            
+            rachunki = []
+            for row in cursor.fetchall():
+                rachunki.append({
+                    'id': row[0],
+                    'original_id': row[1],
+                    'numer_rachunku': row[2],
+                    'data_wystawienia': row[3],
+                    'nabywca': f"{row[4]} {row[5]}",
+                    'kwota': row[6],
+                    'data_usuniecia': row[7],
+                    'powod_usuniecia': row[8] or 'Brak powodu'
+                })
+            
+            return rachunki
+    
+    def przywroc_rachunek(self, deleted_id: int) -> bool:
+        """
+        Przywraca usunięty rachunek
+        
+        Args:
+            deleted_id: ID w tabeli usuniętych rachunków
+            
+        Returns:
+            True jeśli przywrócono, False w przeciwnym razie
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Pobierz dane usuniętego rachunku
+            cursor.execute('SELECT * FROM usunięte_rachunki WHERE id = ?', (deleted_id,))
+            rachunek = cursor.fetchone()
+            
+            if not rachunek:
+                return False
+            
+            # Sprawdź czy numer rachunku nie koliduje
+            cursor.execute('SELECT COUNT(*) FROM rachunki WHERE numer_rachunku = ?', (rachunek[2],))
+            if cursor.fetchone()[0] > 0:
+                return False  # Numer już istnieje
+            
+            # Przywróć do głównej tabeli
+            cursor.execute('''
+                INSERT INTO rachunki (
+                    numer_rachunku, data_wystawienia, data_wykonania_uslugi,
+                    sprzedawca_imie, sprzedawca_nazwisko, sprzedawca_ulica, 
+                    sprzedawca_nr_domu, sprzedawca_kod_pocztowy, sprzedawca_miasto,
+                    nabywca_imie, nabywca_nazwisko, nabywca_ulica, 
+                    nabywca_nr_domu, nabywca_kod_pocztowy, nabywca_miasto,
+                    nazwa_uslugi, cena_jednostkowa, kwota_do_zaplaty, kwota_slownie, 
+                    plik_pdf, data_utworzenia
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                rachunek[2], rachunek[3], rachunek[4],
+                rachunek[5], rachunek[6], rachunek[7], rachunek[8], rachunek[9], rachunek[10],
+                rachunek[11], rachunek[12], rachunek[13], rachunek[14], rachunek[15], rachunek[16],
+                rachunek[17], rachunek[18], rachunek[19], rachunek[20], 
+                rachunek[21], rachunek[22]
+            ))
+            
+            # Usuń z tabeli usuniętych
+            cursor.execute('DELETE FROM usunięte_rachunki WHERE id = ?', (deleted_id,))
+            
+            conn.commit()
+            return True
+    
+    def trwale_usun_rachunek(self, deleted_id: int) -> bool:
+        """
+        Trwale usuwa rachunek z tabeli usuniętych
+        
+        Args:
+            deleted_id: ID w tabeli usuniętych rachunków
+            
+        Returns:
+            True jeśli usunięto, False w przeciwnym razie
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM usunięte_rachunki WHERE id = ?', (deleted_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def pobierz_ustawienie(self, klucz: str) -> Optional[str]:
+        """
+        Pobiera wartość ustawienia
+        
+        Args:
+            klucz: Klucz ustawienia
+            
+        Returns:
+            Wartość ustawienia lub None
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT wartosc FROM ustawienia WHERE klucz = ?', (klucz,))
+            result = cursor.fetchone()
+            return result[0] if result else None
+    
+    def zapisz_ustawienie(self, klucz: str, wartosc: str) -> None:
+        """
+        Zapisuje ustawienie
+        
+        Args:
+            klucz: Klucz ustawienia
+            wartosc: Wartość ustawienia
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO ustawienia (klucz, wartosc)
+                VALUES (?, ?)
+            ''', (klucz, wartosc))
+            conn.commit()

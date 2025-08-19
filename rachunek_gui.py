@@ -108,9 +108,438 @@ class RachunekApp:
         except:
             if hasattr(self, 'size_info_var'):
                 self.size_info_var.set("Niedostępne")
+    
+    def weryfikuj_administratora(self) -> bool:
+        """
+        Weryfikuje hasło administratora
+        
+        Returns:
+            True jeśli weryfikacja przebiegła pomyślnie
+        """
+        haslo_window = tk.Toplevel(self.root)
+        haslo_window.title("🔐 Uwierzytelnienie Administratora")
+        haslo_window.geometry("400x200")
+        haslo_window.resizable(False, False)
+        haslo_window.transient(self.root)
+        haslo_window.grab_set()
+        
+        # Wyśrodkuj okno
+        haslo_window.update_idletasks()
+        x = (haslo_window.winfo_screenwidth() - 400) // 2
+        y = (haslo_window.winfo_screenheight() - 200) // 2
+        haslo_window.geometry(f"400x200+{x}+{y}")
+        
+        wynik = {'authenticated': False}
+        
+        # Ramka główna
+        main_frame = ttk.Frame(haslo_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Etykieta informacyjna
+        ttk.Label(main_frame, text="🔐 Wprowadź hasło administratora:", 
+                 font=('Segoe UI', 11, 'bold')).pack(pady=(0, 10))
+        
+        ttk.Label(main_frame, text="Domyślne hasło: admin123", 
+                 foreground="gray").pack(pady=(0, 15))
+        
+        # Pole hasła
+        haslo_var = tk.StringVar()
+        haslo_entry = ttk.Entry(main_frame, textvariable=haslo_var, show="*", width=30, font=('Segoe UI', 10))
+        haslo_entry.pack(pady=(0, 20))
+        haslo_entry.focus()
+        
+        # Ramka przycisków
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.pack(fill="x")
+        
+        def sprawdz_haslo():
+            if self.manager.sprawdz_haslo_administratora(haslo_var.get()):
+                wynik['authenticated'] = True
+                haslo_window.destroy()
+            else:
+                messagebox.showerror("Błąd", "Niepoprawne hasło administratora!", parent=haslo_window)
+                haslo_entry.delete(0, tk.END)
+                haslo_entry.focus()
+        
+        def anuluj():
+            haslo_window.destroy()
+        
+        # Przyciski
+        ttk.Button(buttons_frame, text="✅ OK", command=sprawdz_haslo, 
+                  style="Success.TButton").pack(side="left", padx=(0, 10))
+        ttk.Button(buttons_frame, text="❌ Anuluj", command=anuluj).pack(side="left")
+        
+        # Obsługa Enter
+        haslo_entry.bind('<Return>', lambda e: sprawdz_haslo())
+        
+        # Czekaj na zamknięcie okna
+        self.root.wait_window(haslo_window)
+        
+        return wynik['authenticated']
+    
+    def otworz_usuwanie_rachunku(self):
+        """Otwiera okno usuwania rachunku"""
+        if not self.weryfikuj_administratora():
+            return
+        
+        # Okno usuwania
+        usun_window = tk.Toplevel(self.root)
+        usun_window.title("❌ Usuń Rachunek")
+        usun_window.geometry("500x400")
+        usun_window.transient(self.root)
+        usun_window.grab_set()
+        
+        # Wyśrodkuj okno
+        usun_window.update_idletasks()
+        x = (usun_window.winfo_screenwidth() - 500) // 2
+        y = (usun_window.winfo_screenheight() - 400) // 2
+        usun_window.geometry(f"500x400+{x}+{y}")
+        
+        main_frame = ttk.Frame(usun_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Ostrzeżenie
+        warning_frame = ttk.Frame(main_frame)
+        warning_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(warning_frame, text="⚠️ OSTRZEŻENIE", 
+                 font=('Segoe UI', 12, 'bold'), foreground="red").pack()
+        ttk.Label(warning_frame, 
+                 text="Usunięte rachunki mogą być przywrócone z sekcji 'Zarządzaj usuniętymi rachunkami'.", 
+                 foreground="orange").pack()
+        
+        # Wybór rachunku
+        ttk.Label(main_frame, text="Wybierz rachunek do usunięcia:", 
+                 font=('Segoe UI', 10, 'bold')).pack(anchor="w", pady=(0, 5))
+        
+        # Lista rachunków
+        columns = ("ID", "Numer", "Data", "Nabywca", "Kwota")
+        tree = ttk.Treeview(main_frame, columns=columns, show="headings", height=10)
+        
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=80 if col == "ID" else 100)
+        
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Pakowanie
+        tree_frame = ttk.Frame(main_frame)
+        tree_frame.pack(fill="both", expand=True, pady=(0, 15))
+        
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Załaduj rachunki
+        rachunki = self.manager.pobierz_liste_rachunkow()
+        for rachunek in rachunki:
+            tree.insert("", "end", values=(
+                rachunek['id'],
+                rachunek['numer_rachunku'],
+                rachunek['data_wystawienia'],
+                rachunek['nabywca'],
+                f"{rachunek['kwota']:.2f} PLN"
+            ))
+        
+        # Powód usunięcia
+        ttk.Label(main_frame, text="Powód usunięcia (opcjonalnie):").pack(anchor="w", pady=(5, 0))
+        powod_var = tk.StringVar()
+        ttk.Entry(main_frame, textvariable=powod_var, width=50).pack(fill="x", pady=(5, 15))
+        
+        # Przyciski
+        def usun_wybrany():
+            selection = tree.selection()
+            if not selection:
+                messagebox.showwarning("Uwaga", "Wybierz rachunek do usunięcia.", parent=usun_window)
+                return
+            
+            item = tree.item(selection[0])
+            rachunek_id = item['values'][0]
+            numer = item['values'][1]
+            
+            if messagebox.askyesno("Potwierdzenie", 
+                                 f"Czy na pewno usunąć rachunek {numer}?", 
+                                 parent=usun_window):
+                wynik = self.manager.usun_rachunek_z_potwierdzeniem(rachunek_id, powod_var.get())
+                
+                if wynik['success']:
+                    messagebox.showinfo("Sukces", 
+                                      f"Rachunek {wynik['numer_rachunku']} został usunięty.", 
+                                      parent=usun_window)
+                    usun_window.destroy()
+                    # Odśwież listę rachunków w głównym oknie
+                    self.load_rachunki_data()
+                else:
+                    messagebox.showerror("Błąd", wynik['error'], parent=usun_window)
+        
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.pack(fill="x")
+        
+        ttk.Button(buttons_frame, text="❌ Usuń wybrany", command=usun_wybrany,
+                  style="Warning.TButton").pack(side="left", padx=(0, 10))
+        ttk.Button(buttons_frame, text="🚫 Anuluj", 
+                  command=usun_window.destroy).pack(side="left")
+    
+    def otworz_zarzadzanie_usuniete(self):
+        """Otwiera okno zarządzania usuniętymi rachunkami"""
+        if not self.weryfikuj_administratora():
+            return
+        
+        # Okno zarządzania
+        manage_window = tk.Toplevel(self.root)
+        manage_window.title("🗑️ Zarządzanie usuniętymi rachunkami")
+        manage_window.geometry("700x500")
+        manage_window.transient(self.root)
+        
+        # Wyśrodkuj okno
+        manage_window.update_idletasks()
+        x = (manage_window.winfo_screenwidth() - 700) // 2
+        y = (manage_window.winfo_screenheight() - 500) // 2
+        manage_window.geometry(f"700x500+{x}+{y}")
+        
+        main_frame = ttk.Frame(manage_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Nagłówek
+        ttk.Label(main_frame, text="🗑️ Usunięte rachunki", 
+                 font=('Segoe UI', 14, 'bold')).pack(pady=(0, 15))
+        
+        # Lista usuniętych rachunków
+        columns = ("ID", "Numer", "Data wystawienia", "Nabywca", "Kwota", "Data usunięcia", "Powód")
+        tree = ttk.Treeview(main_frame, columns=columns, show="headings", height=15)
+        
+        # Konfiguracja kolumn
+        widths = [50, 100, 100, 120, 80, 120, 150]
+        for i, col in enumerate(columns):
+            tree.heading(col, text=col)
+            tree.column(col, width=widths[i])
+        
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Pakowanie
+        tree_frame = ttk.Frame(main_frame)
+        tree_frame.pack(fill="both", expand=True, pady=(0, 15))
+        
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        def odswież_liste():
+            # Wyczyść listę
+            for item in tree.get_children():
+                tree.delete(item)
+            
+            # Załaduj usunięte rachunki
+            usunięte = self.manager.pobierz_usunięte_rachunki()
+            for rachunek in usunięte:
+                tree.insert("", "end", values=(
+                    rachunek['id'],
+                    rachunek['numer_rachunku'],
+                    rachunek['data_wystawienia'],
+                    rachunek['nabywca'],
+                    f"{rachunek['kwota']:.2f} PLN",
+                    rachunek['data_usuniecia'][:19] if rachunek['data_usuniecia'] else "Nieznana",  # Obetnij mikrosekundy
+                    rachunek['powod_usuniecia']
+                ))
+        
+        # Załaduj dane
+        odswież_liste()
+        
+        # Przyciski
+        def przywroc_wybrany():
+            selection = tree.selection()
+            if not selection:
+                messagebox.showwarning("Uwaga", "Wybierz rachunek do przywrócenia.", parent=manage_window)
+                return
+            
+            item = tree.item(selection[0])
+            deleted_id = item['values'][0]
+            numer = item['values'][1]
+            
+            if messagebox.askyesno("Potwierdzenie", 
+                                 f"Czy na pewno przywrócić rachunek {numer}?", 
+                                 parent=manage_window):
+                wynik = self.manager.przywroc_rachunek(deleted_id)
+                
+                if wynik['success']:
+                    messagebox.showinfo("Sukces", 
+                                      f"Rachunek {numer} został przywrócony.", 
+                                      parent=manage_window)
+                    odswież_liste()
+                    # Odśwież listę rachunków w głównym oknie
+                    self.load_rachunki_data()
+                else:
+                    messagebox.showerror("Błąd", wynik['error'], parent=manage_window)
+        
+        def trwale_usun_wybrany():
+            selection = tree.selection()
+            if not selection:
+                messagebox.showwarning("Uwaga", "Wybierz rachunek do trwałego usunięcia.", parent=manage_window)
+                return
+            
+            item = tree.item(selection[0])
+            deleted_id = item['values'][0]
+            numer = item['values'][1]
+            
+            if messagebox.askyesno("Ostrzeżenie", 
+                                 f"⚠️ UWAGA: Trwałe usunięcie rachunku {numer} nie może być cofnięte!\n\nCzy na pewno kontynuować?", 
+                                 parent=manage_window):
+                wynik = self.manager.trwale_usun_rachunek(deleted_id)
+                
+                if wynik['success']:
+                    messagebox.showinfo("Sukces", 
+                                      f"Rachunek {numer} został trwale usunięty.", 
+                                      parent=manage_window)
+                    odswież_liste()
+                else:
+                    messagebox.showerror("Błąd", wynik['error'], parent=manage_window)
+        
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.pack(fill="x", pady=(10, 0))
+        
+        ttk.Button(buttons_frame, text="↩️ Przywróć wybrany", command=przywroc_wybrany,
+                  style="Success.TButton").pack(side="left", padx=(0, 10))
+        ttk.Button(buttons_frame, text="🗑️ Usuń trwale", command=trwale_usun_wybrany,
+                  style="Warning.TButton").pack(side="left", padx=(0, 10))
+        ttk.Button(buttons_frame, text="🔄 Odśwież", command=odswież_liste).pack(side="left", padx=(0, 10))
+        ttk.Button(buttons_frame, text="🚫 Zamknij", command=manage_window.destroy).pack(side="right")
+    
+    def otworz_zmiana_hasla(self):
+        """Otwiera okno zmiany hasła administratora"""
+        if not self.weryfikuj_administratora():
+            return
+        
+        # Okno zmiany hasła
+        haslo_window = tk.Toplevel(self.root)
+        haslo_window.title("🔑 Zmień hasło administratora")
+        haslo_window.geometry("400x300")
+        haslo_window.resizable(False, False)
+        haslo_window.transient(self.root)
+        haslo_window.grab_set()
+        
+        # Wyśrodkuj okno
+        haslo_window.update_idletasks()
+        x = (haslo_window.winfo_screenwidth() - 400) // 2
+        y = (haslo_window.winfo_screenheight() - 300) // 2
+        haslo_window.geometry(f"400x300+{x}+{y}")
+        
+        main_frame = ttk.Frame(haslo_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Nagłówek
+        ttk.Label(main_frame, text="🔑 Zmień hasło administratora", 
+                 font=('Segoe UI', 12, 'bold')).pack(pady=(0, 20))
+        
+        # Stare hasło
+        ttk.Label(main_frame, text="Obecne hasło:").pack(anchor="w", pady=(0, 5))
+        stare_haslo_var = tk.StringVar()
+        ttk.Entry(main_frame, textvariable=stare_haslo_var, show="*", width=40).pack(pady=(0, 15))
+        
+        # Nowe hasło
+        ttk.Label(main_frame, text="Nowe hasło (min. 6 znaków):").pack(anchor="w", pady=(0, 5))
+        nowe_haslo_var = tk.StringVar()
+        ttk.Entry(main_frame, textvariable=nowe_haslo_var, show="*", width=40).pack(pady=(0, 15))
+        
+        # Potwierdzenie nowego hasła
+        ttk.Label(main_frame, text="Potwierdź nowe hasło:").pack(anchor="w", pady=(0, 5))
+        potwierdz_haslo_var = tk.StringVar()
+        ttk.Entry(main_frame, textvariable=potwierdz_haslo_var, show="*", width=40).pack(pady=(0, 20))
+        
+        def zmien_haslo():
+            stare = stare_haslo_var.get()
+            nowe = nowe_haslo_var.get()
+            potwierdz = potwierdz_haslo_var.get()
+            
+            if not stare or not nowe or not potwierdz:
+                messagebox.showerror("Błąd", "Wszystkie pola muszą być wypełnione.", parent=haslo_window)
+                return
+            
+            if nowe != potwierdz:
+                messagebox.showerror("Błąd", "Nowe hasło i jego potwierdzenie muszą być identyczne.", parent=haslo_window)
+                return
+            
+            wynik = self.manager.zmien_haslo_administratora(stare, nowe)
+            
+            if wynik['success']:
+                messagebox.showinfo("Sukces", "Hasło administratora zostało zmienione.", parent=haslo_window)
+                haslo_window.destroy()
+            else:
+                messagebox.showerror("Błąd", wynik['error'], parent=haslo_window)
+        
+        # Przyciski
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.pack(fill="x")
+        
+        ttk.Button(buttons_frame, text="✅ Zmień hasło", command=zmien_haslo,
+                  style="Success.TButton").pack(side="left", padx=(0, 10))
+        ttk.Button(buttons_frame, text="❌ Anuluj", command=haslo_window.destroy).pack(side="left")
         
         # Zaplanuj następną aktualizację za 2 sekundy
         self.root.after(2000, self.update_size_info)
+    
+    def usun_rachunek_z_menu(self):
+        """Usuwa rachunek wybrany z menu kontekstowego"""
+        if not self.weryfikuj_administratora():
+            return
+        
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showwarning("Uwaga", "Wybierz rachunek do usunięcia.")
+            return
+        
+        item = self.tree.item(selection[0])
+        rachunek_id = item['values'][0]
+        numer = item['values'][1]
+        
+        # Okno z powodem usunięcia
+        powod_window = tk.Toplevel(self.root)
+        powod_window.title("❌ Usuń rachunek")
+        powod_window.geometry("400x200")
+        powod_window.resizable(False, False)
+        powod_window.transient(self.root)
+        powod_window.grab_set()
+        
+        # Wyśrodkuj okno
+        powod_window.update_idletasks()
+        x = (powod_window.winfo_screenwidth() - 400) // 2
+        y = (powod_window.winfo_screenheight() - 200) // 2
+        powod_window.geometry(f"400x200+{x}+{y}")
+        
+        main_frame = ttk.Frame(powod_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Informacja o rachunku
+        ttk.Label(main_frame, text=f"Rachunek do usunięcia: {numer}", 
+                 font=('Segoe UI', 10, 'bold')).pack(pady=(0, 10))
+        
+        # Powód
+        ttk.Label(main_frame, text="Powód usunięcia (opcjonalnie):").pack(anchor="w", pady=(0, 5))
+        powod_var = tk.StringVar()
+        ttk.Entry(main_frame, textvariable=powod_var, width=40).pack(pady=(0, 15))
+        
+        # Przyciski
+        def potwierdz_usuniecie():
+            wynik = self.manager.usun_rachunek_z_potwierdzeniem(rachunek_id, powod_var.get())
+            
+            if wynik['success']:
+                messagebox.showinfo("Sukces", 
+                                  f"Rachunek {wynik['numer_rachunku']} został usunięty.", 
+                                  parent=powod_window)
+                powod_window.destroy()
+                # Odśwież listę rachunków
+                self.load_rachunki_data()
+            else:
+                messagebox.showerror("Błąd", wynik['error'], parent=powod_window)
+        
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.pack(fill="x")
+        
+        ttk.Button(buttons_frame, text="❌ Usuń", command=potwierdz_usuniecie,
+                  style="Warning.TButton").pack(side="left", padx=(0, 10))
+        ttk.Button(buttons_frame, text="🚫 Anuluj", 
+                  command=powod_window.destroy).pack(side="left")
     
     def setup_keyboard_shortcuts(self):
         """Konfiguruje skróty klawiszowe"""
@@ -491,6 +920,9 @@ class RachunekApp:
         self.context_menu.add_command(label="Regeneruj PDF", command=self.regeneruj_pdf)
         self.context_menu.add_separator()
         self.context_menu.add_command(label="Pokaż szczegóły", command=self.pokaz_szczegoly)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="❌ Usuń rachunek (Administrator)", 
+                                     command=self.usun_rachunek_z_menu, foreground="red")
         
         self.tree.bind("<Button-3>", self.show_context_menu)
     
@@ -590,6 +1022,30 @@ class RachunekApp:
 • Escape - Wyczyść formularz (w zakładce Nowy Rachunek)"""
         
         ttk.Label(shortcuts_frame, text=shortcuts_text, justify="left").pack(anchor="w")
+        
+        # Zarządzanie rachunkami (sekcja administratora)
+        admin_frame = ttk.LabelFrame(self.tab_ustawienia, text="🔐 Zarządzanie rachunkami (Administrator)", padding=15)
+        admin_frame.pack(fill="x", padx=15, pady=15)
+        
+        admin_info = ttk.Label(admin_frame, 
+                              text="⚠️ Ta sekcja wymaga uwierzytelnienia administratora.\nFunkcje usuwania i przywracania rachunków.", 
+                              justify="left", foreground="orange")
+        admin_info.pack(anchor="w", pady=(0, 10))
+        
+        admin_buttons_frame = ttk.Frame(admin_frame)
+        admin_buttons_frame.pack(fill="x")
+        
+        # Przycisk zarządzania usuniętymi rachunkami
+        ttk.Button(admin_buttons_frame, text="🗑️ Zarządzaj usuniętymi rachunkami", 
+                  command=self.otworz_zarzadzanie_usuniete).pack(side="left", padx=(0, 10))
+        
+        # Przycisk usuwania rachunku
+        ttk.Button(admin_buttons_frame, text="❌ Usuń rachunek", 
+                  command=self.otworz_usuwanie_rachunku, style="Warning.TButton").pack(side="left", padx=(0, 10))
+        
+        # Przycisk zmiany hasła
+        ttk.Button(admin_buttons_frame, text="🔑 Zmień hasło administratora", 
+                  command=self.otworz_zmiana_hasla).pack(side="left")
     
     def load_default_sprzedawca_data(self):
         """Ładuje domyślne dane sprzedawcy"""

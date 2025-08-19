@@ -525,3 +525,142 @@ class RachunekManager:
             'max_miesiac': max_miesiac,
             'min_miesiac': min_miesiac
         }
+    
+    def usun_rachunek_z_potwierdzeniem(self, rachunek_id: int, powod: str = "") -> Dict:
+        """
+        Usuwa rachunek z potwierdzeniem i walidacją
+        
+        Args:
+            rachunek_id: ID rachunku do usunięcia
+            powod: Powód usunięcia
+            
+        Returns:
+            Słownik z wynikiem operacji
+        """
+        wynik = {'success': False, 'error': None}
+        
+        try:
+            # Sprawdź czy rachunek istnieje
+            szczegoly = self.pobierz_szczegoly_rachunku(rachunek_id)
+            if not szczegoly:
+                wynik['error'] = "Rachunek o podanym ID nie istnieje"
+                return wynik
+            
+            # Usuń rachunek
+            if self.db.usun_rachunek(rachunek_id, powod):
+                wynik['success'] = True
+                wynik['numer_rachunku'] = szczegoly['numer_rachunku']
+            else:
+                wynik['error'] = "Błąd podczas usuwania rachunku"
+                
+        except Exception as e:
+            wynik['error'] = f"Błąd podczas usuwania: {str(e)}"
+        
+        return wynik
+    
+    def pobierz_usunięte_rachunki(self) -> List[Dict]:
+        """Pobiera listę usuniętych rachunków"""
+        return self.db.pobierz_usunięte_rachunki()
+    
+    def przywroc_rachunek(self, deleted_id: int) -> Dict:
+        """
+        Przywraca usunięty rachunek
+        
+        Args:
+            deleted_id: ID w tabeli usuniętych rachunków
+            
+        Returns:
+            Słownik z wynikiem operacji
+        """
+        wynik = {'success': False, 'error': None}
+        
+        try:
+            if self.db.przywroc_rachunek(deleted_id):
+                wynik['success'] = True
+            else:
+                wynik['error'] = "Nie można przywrócić rachunku (może już istnieć rachunek o tym numerze)"
+                
+        except Exception as e:
+            wynik['error'] = f"Błąd podczas przywracania: {str(e)}"
+        
+        return wynik
+    
+    def trwale_usun_rachunek(self, deleted_id: int) -> Dict:
+        """
+        Trwale usuwa rachunek
+        
+        Args:
+            deleted_id: ID w tabeli usuniętych rachunków
+            
+        Returns:
+            Słownik z wynikiem operacji
+        """
+        wynik = {'success': False, 'error': None}
+        
+        try:
+            if self.db.trwale_usun_rachunek(deleted_id):
+                wynik['success'] = True
+            else:
+                wynik['error'] = "Rachunek o podanym ID nie istnieje"
+                
+        except Exception as e:
+            wynik['error'] = f"Błąd podczas trwałego usuwania: {str(e)}"
+        
+        return wynik
+    
+    def sprawdz_haslo_administratora(self, haslo: str) -> bool:
+        """
+        Sprawdza hasło administratora
+        
+        Args:
+            haslo: Hasło do sprawdzenia
+            
+        Returns:
+            True jeśli hasło poprawne
+        """
+        import hashlib
+        
+        # Pobierz zapisane hasło (hash)
+        zapisane_haslo = self.db.pobierz_ustawienie('admin_password_hash')
+        
+        # Jeśli nie ma hasła, użyj domyślnego
+        if not zapisane_haslo:
+            # Domyślne hasło: "admin123" (w praktyce powinno być zmieniane)
+            domyslne_haslo = hashlib.sha256("admin123".encode()).hexdigest()
+            self.db.zapisz_ustawienie('admin_password_hash', domyslne_haslo)
+            zapisane_haslo = domyslne_haslo
+        
+        # Sprawdź hasło
+        hash_hasla = hashlib.sha256(haslo.encode()).hexdigest()
+        return hash_hasla == zapisane_haslo
+    
+    def zmien_haslo_administratora(self, stare_haslo: str, nowe_haslo: str) -> Dict:
+        """
+        Zmienia hasło administratora
+        
+        Args:
+            stare_haslo: Obecne hasło
+            nowe_haslo: Nowe hasło
+            
+        Returns:
+            Słownik z wynikiem operacji
+        """
+        wynik = {'success': False, 'error': None}
+        
+        if not self.sprawdz_haslo_administratora(stare_haslo):
+            wynik['error'] = "Niepoprawne obecne hasło"
+            return wynik
+        
+        if len(nowe_haslo) < 6:
+            wynik['error'] = "Nowe hasło musi mieć co najmniej 6 znaków"
+            return wynik
+        
+        try:
+            import hashlib
+            hash_hasla = hashlib.sha256(nowe_haslo.encode()).hexdigest()
+            self.db.zapisz_ustawienie('admin_password_hash', hash_hasla)
+            wynik['success'] = True
+        except Exception as e:
+            wynik['error'] = f"Błąd podczas zmiany hasła: {str(e)}"
+        
+        return wynik
