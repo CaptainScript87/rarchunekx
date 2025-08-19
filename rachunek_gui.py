@@ -185,15 +185,15 @@ class RachunekApp:
         # Okno usuwania
         usun_window = tk.Toplevel(self.root)
         usun_window.title("❌ Usuń Rachunek")
-        usun_window.geometry("500x400")
+        usun_window.geometry("600x500")
         usun_window.transient(self.root)
         usun_window.grab_set()
         
         # Wyśrodkuj okno
         usun_window.update_idletasks()
-        x = (usun_window.winfo_screenwidth() - 500) // 2
-        y = (usun_window.winfo_screenheight() - 400) // 2
-        usun_window.geometry(f"500x400+{x}+{y}")
+        x = (usun_window.winfo_screenwidth() - 600) // 2
+        y = (usun_window.winfo_screenheight() - 500) // 2
+        usun_window.geometry(f"600x500+{x}+{y}")
         
         main_frame = ttk.Frame(usun_window, padding=20)
         main_frame.pack(fill="both", expand=True)
@@ -214,7 +214,7 @@ class RachunekApp:
         
         # Lista rachunków
         columns = ("ID", "Numer", "Data", "Nabywca", "Kwota")
-        tree = ttk.Treeview(main_frame, columns=columns, show="headings", height=10)
+        tree = ttk.Treeview(main_frame, columns=columns, show="headings", height=8)
         
         for col in columns:
             tree.heading(col, text=col)
@@ -228,8 +228,8 @@ class RachunekApp:
         tree_frame = ttk.Frame(main_frame)
         tree_frame.pack(fill="both", expand=True, pady=(0, 15))
         
-        tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        tree.pack(in_=tree_frame, side="left", fill="both", expand=True)
+        scrollbar.pack(in_=tree_frame, side="right", fill="y")
         
         # Załaduj rachunki
         rachunki = self.manager.pobierz_liste_rachunkow()
@@ -274,12 +274,16 @@ class RachunekApp:
                     messagebox.showerror("Błąd", wynik['error'], parent=usun_window)
         
         buttons_frame = ttk.Frame(main_frame)
-        buttons_frame.pack(fill="x")
+        buttons_frame.pack(fill="x", pady=(10, 0))
         
+        print("DEBUG: Tworzę przyciski w oknie usuwania")  # Debug
         ttk.Button(buttons_frame, text="❌ Usuń wybrany", command=usun_wybrany,
                   style="Warning.TButton").pack(side="left", padx=(0, 10))
         ttk.Button(buttons_frame, text="🚫 Anuluj", 
                   command=usun_window.destroy).pack(side="left")
+        
+        # Wymusza aktualizację okna
+        usun_window.update_idletasks()
     
     def otworz_zarzadzanie_usuniete(self):
         """Otwiera okno zarządzania usuniętymi rachunkami"""
