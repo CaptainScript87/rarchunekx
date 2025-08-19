@@ -77,7 +77,7 @@ class RachunekApp:
         
         # Upewnij się, że okno nie będzie za małe
         min_width = 900
-        min_height = 700
+        min_height = 800  # Zwiększ minimalną wysokość dla nowych sekcji
         
         # Upewnij się, że okno nie będzie za duże (max 90% ekranu)
         screen_width = self.root.winfo_screenwidth()
@@ -935,8 +935,32 @@ class RachunekApp:
     
     def create_ustawienia_tab(self):
         """Tworzy zakładkę ustawień"""
+        # Utwórz canvas i scrollbar dla przewijania
+        canvas = tk.Canvas(self.tab_ustawienia, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.tab_ustawienia, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        # Konfiguruj scroll region
+        def configure_scroll_region(event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        
+        scrollable_frame.bind("<Configure>", configure_scroll_region)
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Obsługa scroll kółkiem myszy
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        canvas.bind("<MouseWheel>", on_mousewheel)
+        
+        # Pakowanie canvas i scrollbar
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Teraz używaj scrollable_frame zamiast self.tab_ustawienia
         # Dane sprzedawcy
-        sprzedawca_frame = ttk.LabelFrame(self.tab_ustawienia, text="🏢 Domyślne dane sprzedawcy", padding=15)
+        sprzedawca_frame = ttk.LabelFrame(scrollable_frame, text="🏢 Domyślne dane sprzedawcy", padding=15)
         sprzedawca_frame.pack(fill="x", padx=15, pady=15)
         
         self.sprzedawca_vars = {}
@@ -968,7 +992,7 @@ class RachunekApp:
         save_btn.grid(row=3, column=0, columnspan=4, pady=15)
         
         # Informacje o aplikacji
-        info_frame = ttk.LabelFrame(self.tab_ustawienia, text="ℹ️ Informacje o aplikacji", padding=15)
+        info_frame = ttk.LabelFrame(scrollable_frame, text="ℹ️ Informacje o aplikacji", padding=15)
         info_frame.pack(fill="x", padx=15, pady=15)
         
         build_info = get_build_info()
@@ -997,7 +1021,7 @@ class RachunekApp:
         about_btn.pack(pady=10)
         
         # Ustawienia okna
-        window_frame = ttk.LabelFrame(self.tab_ustawienia, text="🪟 Ustawienia okna", padding=15)
+        window_frame = ttk.LabelFrame(scrollable_frame, text="🪟 Ustawienia okna", padding=15)
         window_frame.pack(fill="x", padx=15, pady=15)
         
         # Przycisk dopasowania rozmiaru
@@ -1015,7 +1039,7 @@ class RachunekApp:
         self.update_size_info()
         
         # Skróty klawiszowe
-        shortcuts_frame = ttk.LabelFrame(self.tab_ustawienia, text="⌨️ Skróty klawiszowe", padding=15)
+        shortcuts_frame = ttk.LabelFrame(scrollable_frame, text="⌨️ Skróty klawiszowe", padding=15)
         shortcuts_frame.pack(fill="x", padx=15, pady=15)
         
         shortcuts_text = """• Ctrl+R lub F11 - Dopasuj rozmiar okna do zawartości
@@ -1024,7 +1048,7 @@ class RachunekApp:
         ttk.Label(shortcuts_frame, text=shortcuts_text, justify="left").pack(anchor="w")
         
         # Zarządzanie rachunkami (sekcja administratora)
-        admin_frame = ttk.LabelFrame(self.tab_ustawienia, text="🔐 Zarządzanie rachunkami (Administrator)", padding=15)
+        admin_frame = ttk.LabelFrame(scrollable_frame, text="🔐 Zarządzanie rachunkami (Administrator)", padding=15)
         admin_frame.pack(fill="x", padx=15, pady=15)
         
         admin_info = ttk.Label(admin_frame, 
