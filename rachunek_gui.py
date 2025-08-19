@@ -212,27 +212,29 @@ class RachunekApp:
         ttk.Label(main_frame, text="Wybierz rachunek do usunięcia:", 
                  font=('Segoe UI', 10, 'bold')).pack(anchor="w", pady=(0, 5))
         
+        # Ramka dla tabeli
+        tree_frame = ttk.Frame(main_frame)
+        tree_frame.pack(fill="both", expand=True, pady=(0, 15))
+        
         # Lista rachunków
         columns = ("ID", "Numer", "Data", "Nabywca", "Kwota")
-        tree = ttk.Treeview(main_frame, columns=columns, show="headings", height=8)
+        tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=8)
         
         for col in columns:
             tree.heading(col, text=col)
             tree.column(col, width=80 if col == "ID" else 100)
         
         # Scrollbar
-        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=tree.yview)
+        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=scrollbar.set)
         
-        # Pakowanie
-        tree_frame = ttk.Frame(main_frame)
-        tree_frame.pack(fill="both", expand=True, pady=(0, 15))
-        
-        tree.pack(in_=tree_frame, side="left", fill="both", expand=True)
-        scrollbar.pack(in_=tree_frame, side="right", fill="y")
+        # Pakowanie tree i scrollbar
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
         
         # Załaduj rachunki
         rachunki = self.manager.pobierz_liste_rachunkow()
+        print(f"DEBUG: Ładuję {len(rachunki)} rachunków do tabeli usuwania")  # Debug
         for rachunek in rachunki:
             tree.insert("", "end", values=(
                 rachunek['id'],
@@ -241,6 +243,7 @@ class RachunekApp:
                 rachunek['nabywca'],
                 f"{rachunek['kwota']:.2f} PLN"
             ))
+        print("DEBUG: Rachunki załadowane do tabeli")  # Debug
         
         # Powód usunięcia
         ttk.Label(main_frame, text="Powód usunięcia (opcjonalnie):").pack(anchor="w", pady=(5, 0))
